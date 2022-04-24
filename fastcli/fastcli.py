@@ -14,6 +14,9 @@ import urllib.request
 
 import aiohttp
 import typing
+import re
+
+max_payload_bytes=26214400
 
 logging.basicConfig(
     level=logging.WARNING,
@@ -69,12 +72,20 @@ def _get_token() -> str:
     token = _find_from(jsresp, 'token:"', '"')
     return token
 
+def _get_target_urls_with_numbytes(targets, numbytes):
+    target_urls = [
+        re.sub("/speedtest","/speedtest/range/0-" + str(numbytes), target["url"])
+        for target in targets
+    ]
+
+    return target_urls
 
 async def main(
     token: str = "",
     timeout: typing.Union[float, int] = 10.0,
     https: bool = True,
     url_count: int = 3,
+    numbytes: int = max_payload_bytes,
     verbosity: int = logging.WARNING,
 ) -> float:
     """Create coroutines for speedtest and return results."""
@@ -91,12 +102,16 @@ async def main(
         resp = r.read().decode()
     resp_json = json.loads(resp)
 
+    target_urls = _get_target_urls_with_numbytes(resp_json["targets"], numbytes)
+    
+    print(target_urls)
+
     start_time = time.time()
 
     async with aiohttp.ClientSession() as session:
         coros = [
-            test_download_speed(session, target["url"])
-            for target in resp_json["targets"]
+            test_download_speed(session, target_url)
+            for target_url in target_urls
         ]
         done, pending = await asyncio.wait(coros, timeout=timeout)
         for task in pending:
